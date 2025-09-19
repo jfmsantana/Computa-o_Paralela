@@ -1,0 +1,8 @@
+import java.rmi.Remote;
+import java.rmi.RemoteException;
+
+public interface Ola extends Remote {
+
+    String digaOla(String nome) throws RemoteException;
+    
+}
