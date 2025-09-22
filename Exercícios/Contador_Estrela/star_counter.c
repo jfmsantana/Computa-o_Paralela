@@ -4,11 +4,6 @@
 
 #define LIMIAR 200 // Valor mínimo de brilho para considerar pixel como estrela
 
-/* ============================================================
-   Função: lerPGM
-   Lê uma imagem PGM no formato P2 (ASCII) e retorna um vetor
-   linear com os pixels. Largura e altura são retornados por referência.
-   ============================================================ */
 int *lerPGM(const char *filename, int *largura, int *altura)
 {
     FILE *f = fopen(filename, "r");
@@ -43,7 +38,8 @@ int *lerPGM(const char *filename, int *largura, int *altura)
 /* ============================================================
    Função: contaEstrelas
    Recebe um bloco de pixels e conta quantas estrelas existem
-   usando um flood-fill (BFS) para agrupar pixels vizinhos brilhantes.
+   usando um flood-fill (máscara vista em processamento
+   de imagens) para agrupar pixels vizinhos brilhantes.
    ============================================================ */
 int contaEstrelas(int *img, int largura, int altura)
 {
@@ -65,7 +61,7 @@ int contaEstrelas(int *img, int largura, int altura)
             {
                 estrelas++;
 
-                // fila para explorar todos os pixels conectados (BFS)
+                // fila para explorar todos os pixels conectados
                 int *fila = (int *)malloc(sizeof(int) * largura * altura);
                 int frente = 0, tras = 0;
                 fila[tras++] = idx;
