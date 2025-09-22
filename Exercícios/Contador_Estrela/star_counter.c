@@ -2,9 +2,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define LIMIAR 200
+#define LIMIAR 200 // Valor mínimo de brilho para considerar pixel como estrela
 
-// --- Leitura de imagem PGM (P2 ASCII) ---
+/* ============================================================
+   Função: lerPGM
+   Lê uma imagem PGM no formato P2 (ASCII) e retorna um vetor
+   linear com os pixels. Largura e altura são retornados por referência.
+   ============================================================ */
 int *lerPGM(const char *filename, int *largura, int *altura)
 {
     FILE *f = fopen(filename, "r");
@@ -36,12 +40,17 @@ int *lerPGM(const char *filename, int *largura, int *altura)
     return dados;
 }
 
-// --- Método local de processamento de imagens para contar estrelas ---
+/* ============================================================
+   Função: contaEstrelas
+   Recebe um bloco de pixels e conta quantas estrelas existem
+   usando um flood-fill (BFS) para agrupar pixels vizinhos brilhantes.
+   ============================================================ */
 int contaEstrelas(int *img, int largura, int altura)
 {
     int *visitado = (int *)calloc(largura * altura, sizeof(int));
     int estrelas = 0;
 
+    // deslocamentos para vizinhança de 8 direções
     int dx[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
     int dy[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
 
@@ -51,9 +60,12 @@ int contaEstrelas(int *img, int largura, int altura)
         {
             int idx = y * largura + x;
 
+            // encontrou pixel brilhante não visitado → nova estrela
             if (img[idx] > LIMIAR && !visitado[idx])
             {
                 estrelas++;
+
+                // fila para explorar todos os pixels conectados (BFS)
                 int *fila = (int *)malloc(sizeof(int) * largura * altura);
                 int frente = 0, tras = 0;
                 fila[tras++] = idx;
@@ -64,6 +76,8 @@ int contaEstrelas(int *img, int largura, int altura)
                     int atual = fila[frente++];
                     int ay = atual / largura;
                     int ax = atual % largura;
+
+                    // varre vizinhos 8-direções
                     for (int k = 0; k < 8; k++)
                     {
                         int nx = ax + dx[k];
@@ -88,6 +102,12 @@ int contaEstrelas(int *img, int largura, int altura)
     return estrelas;
 }
 
+/* ============================================================
+   Função principal:
+   Modelo mestre/escravo com MPI para contar estrelas.
+   O mestre lê a imagem, divide em blocos e envia aos escravos.
+   Cada escravo conta as estrelas do seu bloco e devolve ao mestre.
+   ============================================================ */
 int main(int argc, char **argv)
 {
     MPI_Init(&argc, &argv);
@@ -99,11 +119,12 @@ int main(int argc, char **argv)
     int largura, altura;
     int *imagem = NULL;
 
+    // ===== Mestre =====
     if (rank == 0)
     {
         if (argc < 2)
         {
-            printf("Uso: mpirun -np N ./estrelas_mpi imagem.pgm\n");
+            printf("Uso: mpirun -np N ./star_counter imagem.pgm\n");
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
 
@@ -111,7 +132,7 @@ int main(int argc, char **argv)
         printf("Imagem %dx%d carregada.\n", largura, altura);
     }
 
-    // Broadcast largura/altura para todos
+    // Envia dimensões para todos
     MPI_Bcast(&largura, 1, MPI_INT, 0, MPI_COMM_WORLD);
     MPI_Bcast(&altura, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
@@ -126,15 +147,15 @@ int main(int argc, char **argv)
 
     int linhas_por_proc = altura / processos_escravos;
 
-    // Escravos recebem suas partes + borda extra
+    // ===== Mestre envia blocos =====
     if (rank == 0)
     {
-        // Mestre envia blocos
         for (int dest = 1; dest <= processos_escravos; dest++)
         {
             int inicio = (dest - 1) * linhas_por_proc;
             int fim = (dest == processos_escravos) ? altura : inicio + linhas_por_proc;
 
+            // adiciona bordas para evitar cortes de estrelas entre processos
             int inicio_envio = (inicio == 0) ? inicio : inicio - 1; // borda acima
             int fim_envio = (fim == altura) ? fim : fim + 1;        // borda abaixo
             int linhas_envio = fim_envio - inicio_envio;
@@ -145,6 +166,7 @@ int main(int argc, char **argv)
                      dest, 0, MPI_COMM_WORLD);
         }
 
+        // recebe parciais e soma
         int totalEstrelas = 0;
         for (int src = 1; src <= processos_escravos; src++)
         {
@@ -152,19 +174,21 @@ int main(int argc, char **argv)
             MPI_Recv(&parcial, 1, MPI_INT, src, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             totalEstrelas += parcial;
         }
+
         printf("Total de estrelas detectadas: %d\n", totalEstrelas);
         free(imagem);
     }
+
+    // ===== Escravos =====
     else
     {
-        // Escravo recebe bloco
         int linhas_recebidas;
         MPI_Recv(&linhas_recebidas, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
         int *bloco = (int *)malloc(sizeof(int) * linhas_recebidas * largura);
         MPI_Recv(bloco, linhas_recebidas * largura, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-        // Ignora a primeira/última linha (bordas) na contagem
+        // ajusta para ignorar linhas de borda artificiais
         int linhas_validas = linhas_recebidas;
         int offset = 0;
         if (rank != 1)
